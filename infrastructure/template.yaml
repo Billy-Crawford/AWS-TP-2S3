@@ -1,5 +1,7 @@
+# # infrastructure/template.yaml
+
 AWSTemplateFormatVersion: '2010-09-09'
-Description: "TP AWS Lambda - Code chargé depuis src/main.py"
+Description: "TP AWS Lambda - S3 Trigger + DynamoDB"
 
 Parameters:
   Environment:
@@ -12,6 +14,9 @@ Parameters:
 
 Resources:
 
+  # =========================
+  # IAM ROLE
+  # =========================
   LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -33,37 +38,68 @@ Resources:
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
+
+              # DynamoDB
               - Effect: Allow
                 Action:
-                  - dynamodb:PutItem
                   - dynamodb:GetItem
+                  - dynamodb:PutItem
                 Resource:
                   - arn:aws:dynamodb:*:*:table/s3-trigger-db
 
+              # S3 access
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource:
+                  - !Sub "arn:aws:s3:::${Environment}-${BucketName}/*"
+
+  # =========================
+  # LAMBDA
+  # =========================
   LambdaTrigger:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub "${Environment}-S3LambdaTrigger"
+
       Handler: main.lambda_handler
       Runtime: python3.12
-      Role: !GetAtt LambdaExecutionRole.Arn
-      Code: ../src   # 👈 IMPORTANT (source locale OK avant package)
 
+      Role: !GetAtt LambdaExecutionRole.Arn
+
+      Environment:
+        Variables:
+          PK_VALUE: "ongartobaye"
+          TABLE_NAME: "s3-trigger-db"
+
+      # IMPORTANT
+      # package command remplacera ceci automatiquement
+      Code: ../src
+
+  # =========================
+  # PERMISSION S3 -> LAMBDA
+  # =========================
   LambdaPermissionForS3:
     Type: AWS::Lambda::Permission
     Properties:
-      Action: lambda:InvokeFunction
       FunctionName: !Ref LambdaTrigger
+      Action: lambda:InvokeFunction
       Principal: s3.amazonaws.com
       SourceArn: !Sub "arn:aws:s3:::${Environment}-${BucketName}"
-      SourceAccount: !Ref AWS::AccountId
 
+  # =========================
+  # S3 BUCKET
+  # =========================
   S3Bucket:
     Type: AWS::S3::Bucket
-    DependsOn: LambdaPermissionForS3
+    DependsOn:
+      - LambdaPermissionForS3
+
     Properties:
       BucketName: !Sub "${Environment}-${BucketName}"
+
       NotificationConfiguration:
         LambdaConfigurations:
           - Event: "s3:ObjectCreated:*"
             Function: !GetAtt LambdaTrigger.Arn
+

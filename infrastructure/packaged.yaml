@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: TP AWS Lambda - Code chargé depuis src/main.py
+Description: TP AWS Lambda - S3 Trigger + DynamoDB
 Parameters:
   Environment:
     Type: String
@@ -30,10 +30,15 @@ Resources:
           Statement:
           - Effect: Allow
             Action:
-            - dynamodb:PutItem
             - dynamodb:GetItem
+            - dynamodb:PutItem
             Resource:
             - arn:aws:dynamodb:*:*:table/s3-trigger-db
+          - Effect: Allow
+            Action:
+            - s3:GetObject
+            Resource:
+            - Fn::Sub: arn:aws:s3:::${Environment}-${BucketName}/*
   LambdaTrigger:
     Type: AWS::Lambda::Function
     Properties:
@@ -45,23 +50,26 @@ Resources:
         Fn::GetAtt:
         - LambdaExecutionRole
         - Arn
+      Environment:
+        Variables:
+          PK_VALUE: ongartobaye
+          TABLE_NAME: s3-trigger-db
       Code:
         S3Bucket: my-lambda-artifacts-ongartobaye
-        S3Key: 9997e562a842e91848ce21677ba5abd3
+        S3Key: ccf7e910aef34f6491369cc376d0a1ca
   LambdaPermissionForS3:
     Type: AWS::Lambda::Permission
     Properties:
-      Action: lambda:InvokeFunction
       FunctionName:
         Ref: LambdaTrigger
+      Action: lambda:InvokeFunction
       Principal: s3.amazonaws.com
       SourceArn:
         Fn::Sub: arn:aws:s3:::${Environment}-${BucketName}
-      SourceAccount:
-        Ref: AWS::AccountId
   S3Bucket:
     Type: AWS::S3::Bucket
-    DependsOn: LambdaPermissionForS3
+    DependsOn:
+    - LambdaPermissionForS3
     Properties:
       BucketName:
         Fn::Sub: ${Environment}-${BucketName}
